@@ -18,10 +18,10 @@ num = 0
 #image.save("omcb.png")
 
 target_image = Image.open("target.png")
-target_image.thumbnail((128, 228))
+target_image.thumbnail((300, 300))
 target_image = target_image.convert('1')
 target_image = numpy.array(target_image)
-target_location = (460, 40)
+target_location = (500, 40)
 
 bit_queue = []
 
@@ -52,10 +52,18 @@ def on_batched_bit_toggles(data):
     set_bit_database(data[0], 1)
     set_bit_database(data[1], 0)
     global bit_queue
+    local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
+    local_map = list(local_map)
+    if "b" in local_map:
+        local_map = local_map[2:]
     if bit_queue != []:
-        print(len(bit_queue))
-        client.emit('toggle_bit', {'index': bit_queue[0]})
-        bit_queue.pop(0)
+        done = False
+        while not done:
+            if not (local_map[bit_queue[0].idx] != "0") == target_image[bit_queue[0].y][bit_queue[0].x]:
+                print(len(bit_queue))
+                client.emit('toggle_bit', {'index': bit_queue[0].idx})
+                done = True
+            bit_queue.pop(0)
 
 @client.on('full_state')
 def on_full_state(data):
@@ -71,6 +79,12 @@ def on_full_state(data):
 @client.event
 def connect():
     pass
+
+class bit_flip:
+    def __init__(self, x, y, idx): # i dont wanna use a tuple thats scaryyyy
+        self.x = x
+        self.y = y
+        self.idx = idx
 
 def toggler():
     global omcb_map
@@ -93,8 +107,8 @@ def toggler():
             #target_location
             for y, y1 in enumerate(target_image):
                 for x, x1 in enumerate(y1):
-                    if (local_map[((y+target_location[1])*1000)+(x+target_location[0])] != 0) != x1:
-                        bit_queue.append(((y+target_location[1])*1000)+(x+target_location[0]))
+                    if (local_map[((y+target_location[1])*1000)+(x+target_location[0])] != "0") != x1:
+                        bit_queue.append(bit_flip(x=x,y=y,idx=((y+target_location[1])*1000)+(x+target_location[0])))
             
         time.sleep(0.01)
 
