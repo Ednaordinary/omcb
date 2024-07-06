@@ -4,6 +4,7 @@ import socketio
 import base64
 import requests
 import struct
+import numpy
 from PIL import Image
 
 client = socketio.Client()
@@ -15,6 +16,12 @@ num = 0
 
 #image = Image.frombytes("1", (1000, 1000), decode)
 #image.save("omcb.png")
+
+target_image = Image.open("target.png")
+target_image.thumbnail((128, 228))
+target_image = target_image.convert('1')
+target_image = numpy.array(target_image)
+target_location = (460, 40)
 
 bit_queue = []
 
@@ -72,9 +79,24 @@ def toggler():
         if bit_queue == []:
             print("renewing queue")
             local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
-            for i in range(1000000):
-                 if local_map[i] != (0 if i % 2 else 1):
-                    bit_queue.append(i)
+            local_map = list(local_map)
+            if "b" in local_map:
+                local_map = local_map[2:]
+            #for i in range(200000, 1000000):
+            #    if i % 2:
+            #        if local_map[i] == "0":
+            #            bit_queue.append(i)
+            #    else:
+            #        if local_map[i] == "1":
+            #            bit_queue.append(i)
+            #target image
+            #target_location
+            for y, y1 in enumerate(target_image):
+                for x, x1 in enumerate(y1):
+                    if (local_map[((y+target_location[1])*1000)+(x+target_location[0])] != 0) != x1:
+                        bit_queue.append(((y+target_location[1])*1000)+(x+target_location[0]))
+            
+        time.sleep(0.01)
 
 threading.Thread(target=toggler).start()
 client.connect('https://onemillioncheckboxes.com/', transports='websocket')
