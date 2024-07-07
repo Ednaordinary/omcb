@@ -22,6 +22,9 @@ target_image.thumbnail((300, 300))
 target_image = target_image.convert('1')
 target_image = numpy.array(target_image)
 target_location = (500, 40)
+start_time = time.time()
+flip_count = 0
+last_save = time.time()
 
 bit_queue = []
 
@@ -49,30 +52,37 @@ def disconnect():
     
 @client.on('batched_bit_toggles')
 def on_batched_bit_toggles(data):
+    global omcb_map
     set_bit_database(data[0], 1)
     set_bit_database(data[1], 0)
     global bit_queue
+    global flip_count
     local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
     local_map = list(local_map)
     if "b" in local_map:
         local_map = local_map[2:]
     if bit_queue != []:
-        done = False
-        while not done:
+        done = 0
+        while done < 2:
             if not (local_map[bit_queue[0].idx] != "0") == target_image[bit_queue[0].y][bit_queue[0].x]:
-                print(len(bit_queue))
                 client.emit('toggle_bit', {'index': bit_queue[0].idx})
-                done = True
+                done += 1
+                flip_count +=1
             bit_queue.pop(0)
+            print(len(bit_queue), "|", round(flip_count/(time.time() - start_time), 2), "flips per second")
+    if bit_queue == []:
+        threading.Thread(target=toggler).start()
+    global last_save
+    if time.time() > last_save + 2:
+        global num
+        num += 1
+        image = Image.frombytes("1", (1000, 1000), omcb_map)
+        image.save("./images/" + str(num) + ".png")
+        last_save = time.time()
 
 @client.on('full_state')
 def on_full_state(data):
-    global num
-    num += 1
-    #verify that the old state isn't weird
     global omcb_map
-    image = Image.frombytes("1", (1000, 1000), omcb_map)
-    image.save("./images/" + str(num) + ".png")
     #save the state
     omcb_map = base64.b64decode(data['full_state'].encode() + b"=")
 
@@ -89,29 +99,25 @@ class bit_flip:
 def toggler():
     global omcb_map
     global bit_queue
-    while True:
-        if bit_queue == []:
-            print("renewing queue")
-            local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
-            local_map = list(local_map)
-            if "b" in local_map:
-                local_map = local_map[2:]
-            #for i in range(200000, 1000000):
-            #    if i % 2:
-            #        if local_map[i] == "0":
-            #            bit_queue.append(i)
-            #    else:
-            #        if local_map[i] == "1":
-            #            bit_queue.append(i)
-            #target image
-            #target_location
-            for y, y1 in enumerate(target_image):
-                for x, x1 in enumerate(y1):
-                    if (local_map[((y+target_location[1])*1000)+(x+target_location[0])] != "0") != x1:
-                        bit_queue.append(bit_flip(x=x,y=y,idx=((y+target_location[1])*1000)+(x+target_location[0])))
-            
-        time.sleep(0.01)
+    print("renewing queue")
+    local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
+    local_map = list(local_map)
+    if "b" in local_map:
+        local_map = local_map[2:]
+    #for i in range(200000, 1000000):
+    #    if i % 2:
+    #        if local_map[i] == "0":
+    #            bit_queue.append(i)
+    #    else:
+    #        if local_map[i] == "1":
+    #            bit_queue.append(i)
+    #target image
+    #target_location
+    for y, y1 in enumerate(target_image):
+        for x, x1 in enumerate(y1):
+            if (local_map[((y+target_location[1])*1000)+(x+target_location[0])] != "0") != x1:
+                bit_queue.append(bit_flip(x=x,y=y,idx=((y+target_location[1])*1000)+(x+target_location[0])))
 
-threading.Thread(target=toggler).start()
 client.connect('https://onemillioncheckboxes.com/', transports='websocket')
-client.wait()
+while True:
+    client.wait()
