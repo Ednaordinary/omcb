@@ -14,6 +14,7 @@ omcb_map = base64.b64decode(omcb_map.encode() + b"=")
 num = 0
 flip_count = 0
 toggler_on = False
+snapshot_num = 0
 
 #image = Image.frombytes("1", (1000, 1000), decode)
 #image.save("omcb.png")
@@ -26,6 +27,7 @@ for i in range(1, 47): # frame count
     #target_image.save("target_factored.png")
     target_image = numpy.array(target_image)
     target_image_list.append(target_image)
+print(target_image_list)
 target_index = 0
 target_location = (480, 30)
 target_image2 = Image.open("target2.png")
@@ -35,8 +37,8 @@ target_image2.save("target2_factored.png")
 target_image2 = numpy.array(target_image2)
 target_location2 = (800, 680)
 target_image3 = Image.open("target3.png")
-target_image3.thumbnail((90, 700))
-target_image3 = target_image2.convert('1')
+target_image3.thumbnail((700, 90))
+target_image3 = target_image3.convert('1')
 target_image3.save("target3_factored.png")
 target_image3 = numpy.array(target_image3)
 target_location3 = (730, 70)
@@ -79,6 +81,7 @@ def make_client():
         set_bit_database(data[1], 0)
         global bit_queue
         global flip_count
+        global snapshot_num
         local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
         local_map = list(local_map)
         #if "b" in local_map:
@@ -94,17 +97,30 @@ def make_client():
                     current_bit = bit_queue[0]
                 except: return
                 bit_queue.pop(0)
-                if current_bit.image == 1:
-                    if not (local_map[current_bit.idx] != "0") == target_image[current_bit.y][current_bit.x]:
-                        client.emit('toggle_bit', {'index': current_bit.idx})
-                        done += 1
-                        flip_count +=1
-                elif current_bit.image == 2:
-                    if not (local_map[current_bit.idx] != "0") == target_image2[current_bit.y][current_bit.x]:
-                        client.emit('toggle_bit', {'index': current_bit.idx})
-                        done += 1
-                        flip_count +=1
-                print(len(bit_queue), "|", round(flip_count/(time.time() - start_time), 2), "flips per second", "|", len(omcb_map))
+                if isinstance(current_bit, snapshot):
+                    snapshot_img = requests.get("https://onemillioncheckboxes.com/api/initial-state")
+                    snapshot_img = snapshot_img.json()['full_state']
+                    snapshot_img = base64.b64decode(snapshot_img.encode() + b"=")
+                    image = Image.frombytes("1", (1000, 1000), snapshot_img)
+                    image.save("./images/" + str(snapshot_num) + ".png")
+                    snapshot_num += 1
+                else:
+                    if current_bit.image == 1:
+                        if not (local_map[current_bit.idx] != "0") == target_image[current_bit.y][current_bit.x]:
+                            client.emit('toggle_bit', {'index': current_bit.idx})
+                            done += 1
+                            flip_count +=1
+                    elif current_bit.image == 2:
+                        if not (local_map[current_bit.idx] != "0") == target_image2[current_bit.y][current_bit.x]:
+                            client.emit('toggle_bit', {'index': current_bit.idx})
+                            done += 1
+                            flip_count +=1
+                    elif current_bit.image == 3:
+                        if not (local_map[current_bit.idx] != "0") == target_image3[current_bit.y][current_bit.x]:
+                            client.emit('toggle_bit', {'index': current_bit.idx})
+                            done += 1
+                            flip_count +=1
+                    print(len(bit_queue), "|", round(flip_count/(time.time() - start_time), 2), "flips per second", "|", len(omcb_map))
 
     @client.on('full_state')
     def on_full_state(data):
@@ -132,20 +148,33 @@ class bit_flip:
         self.idx = idx
         self.image = image
 
+class snapshot:
+    def __init__(self):
+        pass
+
 def toggler():
     global omcb_map
     global bit_queue
     global toggler_on
+    global target_index
     if not toggler_on:
         toggler_on = True
         print("renewing queue")
         local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
         local_map = list(local_map)
         local_map = bin_convert(local_map)
-        for y, y1 in enumerate(target_image):
+        bit_queue.append(snapshot())
+        for y, y1 in enumerate(target_image_list[target_index]):
             for x, x1 in enumerate(y1):
                 if (local_map[((y+target_location[1])*1000)+(x+target_location[0])] != "0") != x1:
                     bit_queue.append(bit_flip(x=x,y=y,idx=((y+target_location[1])*1000)+(x+target_location[0]), image=1))
+        try:
+            target_image_list[target_image + 1]
+        except:
+            target_index = 0
+        else:
+            target_index += 1
+        bit_queue.append(snapshot())
         for y, y1 in enumerate(target_image2):
             for x, x1 in enumerate(y1):
                 if (local_map[((y+target_location2[1])*1000)+(x+target_location2[0])] != "0") != x1:
@@ -153,17 +182,18 @@ def toggler():
         for y, y1 in enumerate(target_image3):
             for x, x1 in enumerate(y1):
                 if (local_map[((y+target_location3[1])*1000)+(x+target_location3[0])] != "0") != x1:
-                    bit_queue.append(bit_flip(x=x,y=y,idx=((y+target_location3[1])*1000)+(x+target_location3[0]), image=2))
+                    bit_queue.append(bit_flip(x=x,y=y,idx=((y+target_location3[1])*1000)+(x+target_location3[0]), image=3))
         toggler_on = False
         preview_image = numpy.array(Image.frombytes("1", (1000, 1000), omcb_map))
         preview_image2 = numpy.array([[False]*1000]*1000)
-        #for bit in bit_queue:
-        #    preview_image[(bit.idx // 1000)][bit.idx - ((bit.idx // 1000)*1000)] = True if preview_image[(bit.idx // 1000)][bit.idx - ((bit.idx // 1000)*1000)] != True else False
-        #    preview_image2[(bit.idx // 1000)][bit.idx - ((bit.idx // 1000)*1000)] = True
-        #preview_image = Image.fromarray((numpy.array(preview_image)*255).round().astype("uint8").squeeze(), mode="L")
-        #preview_image.show()
-        #preview_image2 = Image.fromarray((numpy.array(preview_image2)*255).round().astype("uint8").squeeze(), mode="L")
-        #preview_image2.show()
+        for bit in bit_queue:
+            if isinstance(bit, bit_flip):
+                preview_image[(bit.idx // 1000)][bit.idx - ((bit.idx // 1000)*1000)] = True if preview_image[(bit.idx // 1000)][bit.idx - ((bit.idx // 1000)*1000)] != True else False
+                preview_image2[(bit.idx // 1000)][bit.idx - ((bit.idx // 1000)*1000)] = True
+        preview_image = Image.fromarray((numpy.array(preview_image)*255).round().astype("uint8").squeeze(), mode="L")
+        preview_image.show()
+        preview_image2 = Image.fromarray((numpy.array(preview_image2)*255).round().astype("uint8").squeeze(), mode="L")
+        preview_image2.show()
 
 def renewer():
     global state_setter
