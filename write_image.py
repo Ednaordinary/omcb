@@ -27,11 +27,11 @@ target_image.save("target_factored.png")
 target_image = numpy.array(target_image)
 target_location = (469, 70)
 target_image2 = Image.open("target2.png")
-target_image2.thumbnail((194, 300))
+target_image2.thumbnail((105, 300))
 target_image2 = target_image2.convert('1')
 target_image2.save("target2_factored.png")
 target_image2 = numpy.array(target_image2)
-target_location2 = (805, 685)
+target_location2 = (128, 744)
 start_time = time.time()
 
 bit_queue = []
@@ -64,8 +64,8 @@ def make_client():
     @client.on('batched_bit_toggles')
     def on_batched_bit_toggles(data):
         global omcb_map
-        set_bit_database(data[0], 1)
-        set_bit_database(data[1], 0)
+        #set_bit_database(data[0], 1)
+        #set_bit_database(data[1], 0)
         global bit_queue
         global flip_count
         local_map = bin(int.from_bytes(omcb_map, byteorder='big'))
@@ -76,17 +76,19 @@ def make_client():
             #random.shuffle(bit_queue)
             done = 0
             while done < 1:
-                if bit_queue[0].image == 1:
-                    if not (local_map[bit_queue[0].idx] != "0") == target_image[bit_queue[0].y][bit_queue[0].x]:
-                        client.emit('toggle_bit', {'index': bit_queue[0].idx})
-                        done += 1
-                        flip_count +=1
-                elif bit_queue[0].image == 2:
-                    if not (local_map[bit_queue[0].idx] != "0") == target_image2[bit_queue[0].y][bit_queue[0].x]:
-                        client.emit('toggle_bit', {'index': bit_queue[0].idx})
-                        done += 1
-                        flip_count +=1
+                # by duplicating the current bit, the clients don't clash into eachother
+                current_bit = bit_queue[0]
                 bit_queue.pop(0)
+                if current_bit.image == 1:
+                    if not (local_map[current_bit.idx] != "0") == target_image[current_bit.y][current_bit.x]:
+                        client.emit('toggle_bit', {'index': current_bit.idx})
+                        done += 1
+                        flip_count +=1
+                elif current_bit.image == 2:
+                    if not (local_map[current_bit.idx] != "0") == target_image2[current_bit.y][current_bit.x]:
+                        client.emit('toggle_bit', {'index': current_bit.idx})
+                        done += 1
+                        flip_count +=1
                 print(len(bit_queue), "|", round(flip_count/(time.time() - start_time), 2), "flips per second", "|", len(omcb_map))
 
     @client.on('full_state')
@@ -135,6 +137,11 @@ def toggler():
                 if (local_map[((y+target_location2[1])*1000)+(x+target_location2[0])] != "0") != x1:
                     bit_queue.append(bit_flip(x=x,y=y,idx=((y+target_location2[1])*1000)+(x+target_location2[0]), image=2))
         toggler_on = False
+        preview_image = [[0]*1000]*1000
+        for bit in bit_queue:
+            preview_image[bit.x][bit.y] = 1
+        preview_image = Image.fromarray((numpy.array(preview_image)*255).round().astype("uint8").squeeze(), mode="L")
+        preview_image.show()
 
 def renewer():
     global state_setter
@@ -146,6 +153,7 @@ def renewer():
             omcb_map = base64.b64decode(omcb_map_tmp.encode() + b"=")
             state_setter = time.time()
             if bit_queue == []:
+                print("starting toggler")
                 threading.Thread(target=toggler).start()
         time.sleep(0.1)
 
@@ -162,7 +170,7 @@ def run_client(client):
         time.sleep(10)
 
 client_threads = []
-for i in range(1):
+for i in range(3):
     client_threads.append(threading.Thread(target=run_client, args=[make_client()]))
 for i in client_threads:
     i.start()
